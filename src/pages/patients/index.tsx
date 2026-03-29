@@ -34,11 +34,11 @@ export default function PatientsPage() {
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<PatientForm>();
 
-  const createMutation = useMutation(
+  const createMutation = useMutation<any, any, PatientForm>(
     (d: PatientForm) => api.post('/patients', d),
     {
       onSuccess: () => { qc.invalidateQueries('patients'); toast.success('Thêm bệnh nhân thành công'); setShowModal(false); reset(); },
-      onError: () => toast.error('Thêm thất bại'),
+      onError: () => { toast.error('Thêm thất bại'); },
     }
   );
 

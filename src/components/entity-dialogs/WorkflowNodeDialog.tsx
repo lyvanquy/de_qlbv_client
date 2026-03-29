@@ -130,7 +130,7 @@ export default function WorkflowNodeDialog({ frame, onClose }: Props) {
 
               {expandedOpt === opt.id && (
                 <div className="px-4 py-3 border-t border-gray-100">
-                  {opt.condition && (
+                  {(opt.condition as string) && (
                     <p className="text-xs text-gray-500 mb-2 font-mono bg-yellow-50 px-2 py-1 rounded">if: {opt.condition as string}</p>
                   )}
                   <div className="flex items-center justify-between mb-2">

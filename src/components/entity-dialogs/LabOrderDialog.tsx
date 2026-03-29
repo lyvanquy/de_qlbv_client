@@ -96,9 +96,9 @@ export default function LabOrderDialog({ frame, onClose }: Props) {
             <div className="text-right">
               {item.result ? (
                 <div className="flex items-center gap-1.5">
-                  {item.isAbnormal && <AlertTriangle size={14} className="text-red-500" />}
-                  {!item.isAbnormal && <CheckCircle size={14} className="text-green-500" />}
-                  <span className={`text-sm font-semibold ${item.isAbnormal ? 'text-red-600' : 'text-green-600'}`}>
+                  {(item.isAbnormal as boolean) && <AlertTriangle size={14} className="text-red-500" />}
+                  {!(item.isAbnormal as boolean) && <CheckCircle size={14} className="text-green-500" />}
+                  <span className={`text-sm font-semibold ${(item.isAbnormal as boolean) ? 'text-red-600' : 'text-green-600'}`}>
                     {item.result as string} {item.unit as string}
                   </span>
                 </div>

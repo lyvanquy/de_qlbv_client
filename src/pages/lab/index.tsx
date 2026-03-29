@@ -111,7 +111,7 @@ export default function LabPage() {
           </select>
           <span className="text-sm text-gray-500">Tong: {data?.total ?? 0}</span>
         </div>
-        <Table columns={columns as never} data={orders} loading={isLoading} />
+        <Table columns={columns as never} data={orders as unknown as Record<string, unknown>[]} loading={isLoading} />
       </div>
 
       <Modal open={showAdd} onClose={() => { setShowAdd(false); reset(); }} title="Tao phieu xet nghiem">

@@ -189,7 +189,7 @@ export default function PatientDetailPage() {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="font-medium text-sm">{format(new Date(order.createdAt as string), 'dd/MM/yyyy HH:mm')}</p>
-                  {order.note && <p className="text-xs text-gray-500">{order.note as string}</p>}
+                  {!!order.note && <p className="text-xs text-gray-500">{order.note as string}</p>}
                 </div>
                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLOR[order.status as string] || 'bg-gray-100 text-gray-600'}`}>{order.status as string}</span>
               </div>
@@ -201,7 +201,7 @@ export default function PatientDetailPage() {
                       {item.result ? (
                         <span className={`font-medium ${item.isAbnormal ? 'text-red-600' : 'text-green-600'}`}>
                           {item.result as string} {item.unit as string}
-                          {item.isAbnormal && ' ⚠'}
+                          {!!item.isAbnormal && ' ⚠'}
                         </span>
                       ) : <span className="text-gray-400">Cho ket qua</span>}
                     </div>
@@ -252,8 +252,8 @@ export default function PatientDetailPage() {
               </div>
               <div className="space-y-1 text-sm">
                 <p><span className="text-gray-500">Chan doan:</span> <span className="font-medium">{r.diagnosis as string}</span></p>
-                {r.treatment && <p><span className="text-gray-500">Dieu tri:</span> {String(r.treatment)}</p>}
-                {r.note && <p><span className="text-gray-500">Ghi chu:</span> {String(r.note)}</p>}
+                {!!r.treatment && <p><span className="text-gray-500">Dieu tri:</span> {String(r.treatment)}</p>}
+                {!!r.note && <p><span className="text-gray-500">Ghi chu:</span> {String(r.note)}</p>}
               </div>
               {(r.prescriptions as unknown[])?.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-gray-100">
