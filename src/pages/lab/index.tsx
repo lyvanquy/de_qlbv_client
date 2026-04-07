@@ -1,128 +1,520 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { format } from 'date-fns';
+import { Plus, TestTube, Search } from 'lucide-react';
+import toast from 'react-hot-toast';
 import Layout from '@/components/Layout';
-import Table from '@/components/Table';
 import Modal from '@/components/Modal';
 import api from '@/lib/axios';
-import toast from 'react-hot-toast';
-import { useForm } from 'react-hook-form';
-import { Plus, Search, FlaskConical, CheckCircle, Clock } from 'lucide-react';
-import EntityDialogLink from '@/components/EntityDialogLink';
 
-interface LabOrder {
-  id: string; status: string; note: string; createdAt: string; completedAt: string | null;
-  patient: { id: string; name: string; patientCode: string };
-  items: { id: string; test: { name: string; code: string }; result: string | null; isAbnormal: boolean }[];
+// Types
+interface TestForm {
+  code: string;
+  name: string;
+  category: string;
+  price: string;
+  unit: string;
+  normalRange: string;
 }
 
-const STATUS: Record<string, { label: string; cls: string }> = {
-  PENDING:     { label: 'Cho xu ly',  cls: 'badge-yellow' },
-  IN_PROGRESS: { label: 'Dang xu ly', cls: 'badge-blue' },
-  COMPLETED:   { label: 'Hoan thanh', cls: 'badge-green' },
-  CANCELLED:   { label: 'Da huy',     cls: 'badge-red' },
+interface OrderForm {
+  patientId: string;
+  note: string;
+  items: Array<{ testId: string }>;
+}
+
+type Status = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+
+const STATUS_COLOR: Record<Status, string> = {
+  PENDING: 'bg-yellow-100 text-yellow-700',
+  IN_PROGRESS: 'bg-blue-100 text-blue-700',
+  COMPLETED: 'bg-green-100 text-green-700',
+  CANCELLED: 'bg-red-100 text-red-700',
+};
+
+const INITIAL_TEST_FORM: TestForm = {
+  code: '',
+  name: '',
+  category: '',
+  price: '',
+  unit: '',
+  normalRange: '',
+};
+
+const INITIAL_ORDER_FORM: OrderForm = {
+  patientId: '',
+  note: '',
+  items: [{ testId: '' }],
 };
 
 export default function LabPage() {
   const qc = useQueryClient();
+  const [tab, setTab] = useState<'orders' | 'tests'>('orders');
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [showTestModal, setShowTestModal] = useState(false);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [showAdd, setShowAdd] = useState(false);
-  const { register, handleSubmit, reset } = useForm();
+  const [orderForm, setOrderForm] = useState<OrderForm>(INITIAL_ORDER_FORM);
+  const [testForm, setTestForm] = useState<TestForm>(INITIAL_TEST_FORM);
 
-  const { data, isLoading } = useQuery(
-    ['lab-orders', search, statusFilter],
-    () => api.get('/lab/orders', { params: { search: search || undefined, status: statusFilter || undefined } }).then(r => r.data.data)
+  // Queries
+  const { data: ordersData, isLoading: ordersLoading } = useQuery(
+    'lab-orders',
+    () => api.get('/lab/orders').then((r) => r.data.data)
   );
 
-  const createMutation = useMutation(
-    (d: unknown) => api.post('/lab/orders', d),
-    { onSuccess: () => { qc.invalidateQueries('lab-orders'); toast.success('Tao phieu xet nghiem thanh cong'); setShowAdd(false); reset(); } }
+  const { data: testsData, isLoading: testsLoading } = useQuery(
+    ['lab-tests', search],
+    () => api.get('/lab/tests', { params: { search } }).then((r) => r.data.data)
   );
 
-  const completeMutation = useMutation(
-    (id: string) => api.patch(`/lab/orders/${id}/complete`),
-    { onSuccess: () => { qc.invalidateQueries('lab-orders'); toast.success('Cap nhat trang thai thanh cong'); } }
+  // Mutations
+  const createOrderMut = useMutation(
+    (data: OrderForm) => {
+      // Validate
+      if (!data.patientId) {
+        throw new Error('Vui lòng nhập mã bệnh nhân');
+      }
+      if (!data.items || data.items.length === 0 || !data.items[0].testId) {
+        throw new Error('Vui lòng chọn ít nhất một xét nghiệm');
+      }
+      return api.post('/lab/orders', data);
+    },
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('lab-orders');
+        setShowOrderModal(false);
+        setOrderForm(INITIAL_ORDER_FORM);
+        toast.success('Tạo phiếu xét nghiệm thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error creating order:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
   );
 
-  const columns = [
-    { key: 'patient', label: 'Benh nhan', render: (r: LabOrder) => (
-      <EntityDialogLink entity="patient" id={r.patient?.id}>
-        <div><p className="font-medium text-sm">{r.patient?.name}</p><p className="text-xs text-gray-400">{r.patient?.patientCode}</p></div>
-      </EntityDialogLink>
-    )},
-    { key: 'items', label: 'Xet nghiem', render: (r: LabOrder) => (
-      <div className="flex flex-wrap gap-1">
-        {r.items?.slice(0, 3).map(it => (
-          <span key={it.id} className={`text-xs px-1.5 py-0.5 rounded ${it.isAbnormal ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{it.test?.code}</span>
-        ))}
-        {(r.items?.length ?? 0) > 3 && <span className="text-xs text-gray-400">+{r.items.length - 3}</span>}
-      </div>
-    )},
-    { key: 'status', label: 'Trang thai', render: (r: LabOrder) => {
-      const s = STATUS[r.status] ?? { label: r.status, cls: 'badge-gray' };
-      return <span className={`badge ${s.cls}`}>{s.label}</span>;
-    }},
-    { key: 'createdAt', label: 'Ngay tao', render: (r: LabOrder) => new Date(r.createdAt).toLocaleDateString('vi-VN') },
-    { key: 'completedAt', label: 'Hoan thanh', render: (r: LabOrder) => r.completedAt ? new Date(r.completedAt).toLocaleDateString('vi-VN') : '-' },
-    { key: 'actions', label: '', render: (r: LabOrder) => r.status === 'IN_PROGRESS' ? (
-      <button onClick={() => completeMutation.mutate(r.id)} className="text-green-600 hover:underline text-xs flex items-center gap-1"><CheckCircle size={12} /> Hoan thanh</button>
-    ) : null },
-  ];
+  const createTestMut = useMutation(
+    (data: TestForm) => {
+      // Validate
+      if (!data.code || !data.name) {
+        throw new Error('Vui lòng nhập đầy đủ mã và tên xét nghiệm');
+      }
+      // Convert price to number
+      const payload = {
+        ...data,
+        price: data.price ? parseFloat(data.price) : 0,
+      };
+      return api.post('/lab/tests', payload);
+    },
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('lab-tests');
+        setShowTestModal(false);
+        setTestForm(INITIAL_TEST_FORM);
+        toast.success('Thêm xét nghiệm thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error creating test:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
-  const orders: LabOrder[] = data?.orders ?? [];
+  const deleteTestMut = useMutation((id: string) => api.delete(`/lab/tests/${id}`), {
+    onSuccess: () => {
+      qc.invalidateQueries('lab-tests');
+      toast.success('Xóa xét nghiệm thành công');
+    },
+    onError: () => { toast.error('Có lỗi xảy ra'); },
+  });
+
+  const deleteOrderMut = useMutation((id: string) => api.delete(`/lab/orders/${id}`), {
+    onSuccess: () => {
+      qc.invalidateQueries('lab-orders');
+      toast.success('Xóa phiếu thành công');
+    },
+    onError: () => { toast.error('Có lỗi xảy ra'); },
+  });
+
+  const orders = ordersData?.orders || [];
+  const tests = testsData || [];
+
+  const addTestItem = () => {
+    setOrderForm((f) => ({ ...f, items: [...f.items, { testId: '' }] }));
+  };
+
+  const updateTestItem = (index: number, testId: string) => {
+    setOrderForm((f) => {
+      const items = [...f.items];
+      items[index] = { testId };
+      return { ...f, items };
+    });
+  };
+
+  const removeTestItem = (index: number) => {
+    setOrderForm((f) => ({
+      ...f,
+      items: f.items.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleDeleteTest = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa xét nghiệm này?')) {
+      deleteTestMut.mutate(id);
+    }
+  };
+
+  const handleDeleteOrder = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa phiếu xét nghiệm này?')) {
+      deleteOrderMut.mutate(id);
+    }
+  };
 
   return (
     <Layout>
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Xet nghiem</h1>
-          <p className="text-gray-500 text-sm mt-1">Quan ly phieu xet nghiem</p>
+        <div className="flex items-center gap-3">
+          <TestTube className="text-primary" size={24} />
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý xét nghiệm</h1>
         </div>
-        <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2"><Plus size={16} /> Tao phieu XN</button>
+        <button
+          onClick={() =>
+            tab === 'orders' ? setShowOrderModal(true) : setShowTestModal(true)
+          }
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus size={16} />
+          {tab === 'orders' ? 'Tạo phiếu XN' : 'Thêm xét nghiệm'}
+        </button>
       </div>
 
-      <div className="grid grid-cols-3 gap-4 mb-6">
-        <div className="card flex items-center gap-3">
-          <div className="p-2 bg-yellow-100 rounded-lg"><Clock size={18} className="text-yellow-600" /></div>
-          <div><p className="text-xs text-gray-500">Cho xu ly</p><p className="text-xl font-bold">{orders.filter(o => o.status === 'PENDING').length}</p></div>
-        </div>
-        <div className="card flex items-center gap-3">
-          <div className="p-2 bg-blue-100 rounded-lg"><FlaskConical size={18} className="text-blue-600" /></div>
-          <div><p className="text-xs text-gray-500">Dang xu ly</p><p className="text-xl font-bold">{orders.filter(o => o.status === 'IN_PROGRESS').length}</p></div>
-        </div>
-        <div className="card flex items-center gap-3">
-          <div className="p-2 bg-green-100 rounded-lg"><CheckCircle size={18} className="text-green-600" /></div>
-          <div><p className="text-xs text-gray-500">Hoan thanh</p><p className="text-xl font-bold">{orders.filter(o => o.status === 'COMPLETED').length}</p></div>
-        </div>
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setTab('orders')}
+          className={`px-4 py-2 rounded ${
+            tab === 'orders' ? 'bg-primary text-white' : 'bg-gray-100'
+          }`}
+        >
+          Phiếu xét nghiệm
+        </button>
+        <button
+          onClick={() => setTab('tests')}
+          className={`px-4 py-2 rounded ${
+            tab === 'tests' ? 'bg-primary text-white' : 'bg-gray-100'
+          }`}
+        >
+          Danh mục XN
+        </button>
       </div>
 
-      <div className="card">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="relative flex-1 max-w-sm">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input className="input pl-9" placeholder="Tim benh nhan..." value={search} onChange={e => setSearch(e.target.value)} />
+      {tab === 'orders' && (
+        <div className="card overflow-hidden p-0">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 border-b border-gray-200">
+              <tr>
+                {['Mã BN', 'Tên BN', 'Ngày tạo', 'Trạng thái', 'Số XN', 'Hành động'].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"
+                    >
+                      {h}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200">
+              {ordersLoading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    Đang tải...
+                  </td>
+                </tr>
+              ) : orders.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    Chưa có phiếu xét nghiệm
+                  </td>
+                </tr>
+              ) : (
+                orders.map((o: any) => (
+                  <tr key={o.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">{o.patient?.patientCode || 'N/A'}</td>
+                    <td className="px-4 py-3">{o.patient?.name || 'N/A'}</td>
+                    <td className="px-4 py-3">
+                      {format(new Date(o.createdAt), 'dd/MM/yyyy HH:mm')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-1 rounded text-xs ${
+                          STATUS_COLOR[o.status as Status]
+                        }`}
+                      >
+                        {o.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">{o.items?.length || 0}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleDeleteOrder(o.id)}
+                        className="text-red-600 hover:text-red-800 text-xs"
+                      >
+                        Xóa
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tab === 'tests' && (
+        <div className="space-y-4">
+          <div className="relative">
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+              size={18}
+            />
+            <input
+              type="text"
+              placeholder="Tìm xét nghiệm..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input pl-10"
+            />
           </div>
-          <select className="input w-40" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="">Tat ca</option>
-            <option value="PENDING">Cho xu ly</option>
-            <option value="IN_PROGRESS">Dang xu ly</option>
-            <option value="COMPLETED">Hoan thanh</option>
-            <option value="CANCELLED">Da huy</option>
-          </select>
-          <span className="text-sm text-gray-500">Tong: {data?.total ?? 0}</span>
-        </div>
-        <Table columns={columns as never} data={orders as unknown as Record<string, unknown>[]} loading={isLoading} />
-      </div>
-
-      <Modal open={showAdd} onClose={() => { setShowAdd(false); reset(); }} title="Tao phieu xet nghiem">
-        <form onSubmit={handleSubmit(d => createMutation.mutate(d))} className="space-y-3">
-          <div><label className="label">Ma benh nhan *</label><input className="input" placeholder="Nhap ID benh nhan" {...register('patientId', { required: true })} /></div>
-          <div><label className="label">Ghi chu</label><textarea className="input" rows={2} {...register('note')} /></div>
-          <div className="flex gap-3 justify-end pt-2">
-            <button type="button" onClick={() => { setShowAdd(false); reset(); }} className="btn-secondary">Huy</button>
-            <button type="submit" disabled={createMutation.isLoading} className="btn-primary">{createMutation.isLoading ? 'Dang luu...' : 'Tao phieu'}</button>
+          <div className="card overflow-hidden p-0">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {['Mã', 'Tên xét nghiệm', 'Danh mục', 'Giá', 'Đơn vị', 'Hành động'].map(
+                    (h) => (
+                      <th
+                        key={h}
+                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"
+                      >
+                        {h}
+                      </th>
+                    )
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {testsLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                      Đang tải...
+                    </td>
+                  </tr>
+                ) : tests.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                      Chưa có xét nghiệm
+                    </td>
+                  </tr>
+                ) : (
+                  tests.map((t: any) => (
+                    <tr key={t.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">{t.code}</td>
+                      <td className="px-4 py-3">{t.name}</td>
+                      <td className="px-4 py-3">{t.category || 'N/A'}</td>
+                      <td className="px-4 py-3">{t.price?.toLocaleString() || 0} đ</td>
+                      <td className="px-4 py-3">{t.unit || 'N/A'}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => handleDeleteTest(t.id)}
+                          className="text-red-600 hover:text-red-800 text-xs"
+                        >
+                          Xóa
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
-        </form>
+        </div>
+      )}
+
+      {/* Create Order Modal */}
+      <Modal
+        open={showOrderModal}
+        onClose={() => {
+          setShowOrderModal(false);
+          setOrderForm(INITIAL_ORDER_FORM);
+        }}
+        title="Tạo phiếu xét nghiệm"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Mã bệnh nhân *</label>
+            <input
+              type="text"
+              className="input"
+              value={orderForm.patientId}
+              onChange={(e) =>
+                setOrderForm({ ...orderForm, patientId: e.target.value })
+              }
+              placeholder="Nhập mã bệnh nhân"
+            />
+          </div>
+          <div>
+            <label className="label">Ghi chú</label>
+            <textarea
+              className="input"
+              value={orderForm.note}
+              onChange={(e) => setOrderForm({ ...orderForm, note: e.target.value })}
+              placeholder="Ghi chú (tùy chọn)"
+            />
+          </div>
+          <div>
+            <label className="label">Xét nghiệm *</label>
+            {orderForm.items.map((item, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <select
+                  className="input flex-1"
+                  value={item.testId}
+                  onChange={(e) => updateTestItem(i, e.target.value)}
+                >
+                  <option value="">Chọn xét nghiệm</option>
+                  {tests.map((t: any) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} - {t.price?.toLocaleString() || 0} đ
+                    </option>
+                  ))}
+                </select>
+                {orderForm.items.length > 1 && (
+                  <button
+                    onClick={() => removeTestItem(i)}
+                    className="btn-secondary px-3"
+                  >
+                    Xóa
+                  </button>
+                )}
+              </div>
+            ))}
+            <button onClick={addTestItem} className="text-primary text-sm mt-2">
+              + Thêm xét nghiệm
+            </button>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowOrderModal(false);
+                setOrderForm(INITIAL_ORDER_FORM);
+              }}
+              className="btn-secondary"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => createOrderMut.mutate(orderForm)}
+              disabled={createOrderMut.isLoading}
+              className="btn-primary"
+            >
+              {createOrderMut.isLoading ? 'Đang xử lý...' : 'Tạo'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Create Test Modal */}
+      <Modal
+        open={showTestModal}
+        onClose={() => {
+          setShowTestModal(false);
+          setTestForm(INITIAL_TEST_FORM);
+        }}
+        title="Thêm xét nghiệm"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Mã *</label>
+            <input
+              type="text"
+              className="input"
+              value={testForm.code}
+              onChange={(e) => setTestForm({ ...testForm, code: e.target.value })}
+              placeholder="Ví dụ: XN001"
+            />
+          </div>
+          <div>
+            <label className="label">Tên xét nghiệm *</label>
+            <input
+              type="text"
+              className="input"
+              value={testForm.name}
+              onChange={(e) => setTestForm({ ...testForm, name: e.target.value })}
+              placeholder="Ví dụ: Xét nghiệm máu"
+            />
+          </div>
+          <div>
+            <label className="label">Danh mục</label>
+            <input
+              type="text"
+              className="input"
+              value={testForm.category}
+              onChange={(e) => setTestForm({ ...testForm, category: e.target.value })}
+              placeholder="Ví dụ: Hematology"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="label">Giá</label>
+              <input
+                type="number"
+                className="input"
+                value={testForm.price}
+                onChange={(e) => setTestForm({ ...testForm, price: e.target.value })}
+                placeholder="0"
+              />
+            </div>
+            <div>
+              <label className="label">Đơn vị</label>
+              <input
+                type="text"
+                className="input"
+                value={testForm.unit}
+                onChange={(e) => setTestForm({ ...testForm, unit: e.target.value })}
+                placeholder="Ví dụ: g/L"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="label">Giá trị bình thường</label>
+            <input
+              type="text"
+              className="input"
+              value={testForm.normalRange}
+              onChange={(e) =>
+                setTestForm({ ...testForm, normalRange: e.target.value })
+              }
+              placeholder="Ví dụ: 4.5-5.5"
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowTestModal(false);
+                setTestForm(INITIAL_TEST_FORM);
+              }}
+              className="btn-secondary"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => createTestMut.mutate(testForm)}
+              disabled={createTestMut.isLoading}
+              className="btn-primary"
+            >
+              {createTestMut.isLoading ? 'Đang xử lý...' : 'Thêm'}
+            </button>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );

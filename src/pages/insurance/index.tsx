@@ -1,68 +1,187 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
+import { format } from 'date-fns';
+import { Plus, Shield } from 'lucide-react';
+import toast from 'react-hot-toast';
 import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import api from '@/lib/axios';
-import { Plus, ShieldCheck, FileText } from 'lucide-react';
-import EntityDialogLink from '@/components/EntityDialogLink';
 
-const CLAIM_STATUS_COLOR: Record<string, string> = {
-  DRAFT: 'bg-gray-100 text-gray-600', SUBMITTED: 'bg-blue-100 text-blue-700',
-  APPROVED: 'bg-green-100 text-green-700', REJECTED: 'bg-red-100 text-red-700',
+// Types
+interface PolicyForm {
+  patientId: string;
+  provider: string;
+  policyNumber: string;
+  coverageAmount: string;
+  validFrom: string;
+  validTo: string;
+  type: string;
+}
+
+interface ClaimForm {
+  billId: string;
+  claimAmount: string;
+  diagnosis: string;
+  note: string;
+}
+
+type ClaimStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'PAID';
+
+const CLAIM_STATUS_COLOR: Record<ClaimStatus, string> = {
+  DRAFT: 'bg-gray-100 text-gray-600',
+  SUBMITTED: 'bg-blue-100 text-blue-700',
+  APPROVED: 'bg-green-100 text-green-700',
+  REJECTED: 'bg-red-100 text-red-700',
   PAID: 'bg-purple-100 text-purple-700',
 };
-const CLAIM_STATUS_LABEL: Record<string, string> = {
-  DRAFT: 'Nhap', SUBMITTED: 'Da nop', APPROVED: 'Duoc duyet',
-  REJECTED: 'Tu choi', PAID: 'Da thanh toan',
+
+const INITIAL_POLICY_FORM: PolicyForm = {
+  patientId: '',
+  provider: '',
+  policyNumber: '',
+  coverageAmount: '',
+  validFrom: '',
+  validTo: '',
+  type: 'BHYT',
+};
+
+const INITIAL_CLAIM_FORM: ClaimForm = {
+  billId: '',
+  claimAmount: '',
+  diagnosis: '',
+  note: '',
 };
 
 export default function InsurancePage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<'policies' | 'claims'>('policies');
-  const [openPolicy, setOpenPolicy] = useState(false);
-  const [policyForm, setPolicyForm] = useState({
-    patientId: '', provider: '', policyNo: '', planName: '',
-    validFrom: '', validTo: '', coveragePercent: 80,
-  });
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
+  const [policyForm, setPolicyForm] = useState<PolicyForm>(INITIAL_POLICY_FORM);
+  const [claimForm, setClaimForm] = useState<ClaimForm>(INITIAL_CLAIM_FORM);
 
-  const { data: policies = [] } = useQuery('insurance-policies', () =>
-    api.get('/insurance/policies').then(r => r.data.data));
-  const { data: claims = [] } = useQuery('insurance-claims', () =>
-    api.get('/insurance/claims').then(r => r.data.data));
-  const { data: patients = [] } = useQuery('insurance-patients', () =>
-    api.get('/patients?limit=200').then(r => { const d = r.data.data; return Array.isArray(d) ? d : (d?.patients ?? []); }));
-
-  const createPolicy = useMutation(
-    (d: typeof policyForm) => api.post('/insurance/policies', { ...d, coveragePercent: Number(d.coveragePercent) }),
-    { onSuccess: () => { qc.invalidateQueries('insurance-policies'); setOpenPolicy(false); } }
+  // Queries
+  const { data: policiesData, isLoading: policiesLoading } = useQuery(
+    'insurance-policies',
+    () => api.get('/insurance/policies').then((r) => r.data.data)
   );
 
-  const updateClaim = useMutation(
-    ({ id, status }: { id: string; status: string }) => api.patch(`/insurance/claims/${id}/status`, { status }),
-    { onSuccess: () => qc.invalidateQueries('insurance-claims') }
+  const { data: claimsData, isLoading: claimsLoading } = useQuery(
+    'insurance-claims',
+    () => api.get('/insurance/claims').then((r) => r.data.data)
   );
+
+  // Mutations
+  const createPolicyMut = useMutation(
+    (data: PolicyForm) => api.post('/insurance/policies', data),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('insurance-policies');
+        setShowPolicyModal(false);
+        setPolicyForm(INITIAL_POLICY_FORM);
+        toast.success('Thêm bảo hiểm thành công');
+      },
+      onError: () => { toast.error('Có lỗi xảy ra'); },
+    }
+  );
+
+  const deletePolicyMut = useMutation(
+    (id: string) => api.delete(`/insurance/policies/${id}`),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('insurance-policies');
+        toast.success('Xóa bảo hiểm thành công');
+      },
+      onError: () => { toast.error('Có lỗi xảy ra'); },
+    }
+  );
+
+  const createClaimMut = useMutation(
+    (data: ClaimForm) => api.post('/insurance/claims', data),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('insurance-claims');
+        setShowClaimModal(false);
+        setClaimForm(INITIAL_CLAIM_FORM);
+        toast.success('Tạo yêu cầu bồi thường thành công');
+      },
+      onError: () => { toast.error('Có lỗi xảy ra'); },
+    }
+  );
+
+  const updateClaimStatusMut = useMutation(
+    ({ id, status }: { id: string; status: string }) =>
+      api.patch(`/insurance/claims/${id}/status`, { status }),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('insurance-claims');
+        toast.success('Cập nhật trạng thái thành công');
+      },
+      onError: () => { toast.error('Có lỗi xảy ra'); },
+    }
+  );
+
+  const deleteClaimMut = useMutation(
+    (id: string) => api.delete(`/insurance/claims/${id}`),
+    {
+      onSuccess: () => {
+        qc.invalidateQueries('insurance-claims');
+        toast.success('Xóa yêu cầu thành công');
+      },
+      onError: () => { toast.error('Có lỗi xảy ra'); },
+    }
+  );
+
+  const policies = policiesData || [];
+  const claims = claimsData || [];
+
+  const handleDeletePolicy = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa hợp đồng bảo hiểm này?')) {
+      deletePolicyMut.mutate(id);
+    }
+  };
+
+  const handleDeleteClaim = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa yêu cầu bồi thường này?')) {
+      deleteClaimMut.mutate(id);
+    }
+  };
 
   return (
     <Layout>
       <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Bao hiem y te</h1>
-          <p className="text-gray-500 text-sm mt-1">Quan ly hop dong va yeu cau boi thuong</p>
+        <div className="flex items-center gap-3">
+          <Shield className="text-primary" size={24} />
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý bảo hiểm</h1>
         </div>
-        {tab === 'policies' && (
-          <button onClick={() => setOpenPolicy(true)} className="btn-primary flex items-center gap-2">
-            <Plus size={16} /> Them hop dong
-          </button>
-        )}
+        <button
+          onClick={() =>
+            tab === 'policies' ? setShowPolicyModal(true) : setShowClaimModal(true)
+          }
+          className="btn-primary flex items-center gap-2"
+        >
+          <Plus size={16} />
+          {tab === 'policies' ? 'Thêm bảo hiểm' : 'Tạo yêu cầu bồi thường'}
+        </button>
       </div>
 
-      <div className="flex gap-1 mb-6 bg-gray-100 p-1 rounded-lg w-fit">
-        {(['policies', 'claims'] as const).map(t => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${tab === t ? 'bg-white shadow text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-            {t === 'policies' ? 'Hop dong BH' : 'Yeu cau boi thuong'}
-          </button>
-        ))}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setTab('policies')}
+          className={`px-4 py-2 rounded ${
+            tab === 'policies' ? 'bg-primary text-white' : 'bg-gray-100'
+          }`}
+        >
+          Hợp đồng bảo hiểm
+        </button>
+        <button
+          onClick={() => setTab('claims')}
+          className={`px-4 py-2 rounded ${
+            tab === 'claims' ? 'bg-primary text-white' : 'bg-gray-100'
+          }`}
+        >
+          Yêu cầu bồi thường
+        </button>
       </div>
 
       {tab === 'policies' && (
@@ -70,31 +189,64 @@ export default function InsurancePage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Benh nhan', 'Nha cung cap', 'So hop dong', 'Goi bao hiem', 'Hieu luc', 'Het han', 'Muc bao hiem'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
+                {[
+                  'Bệnh nhân',
+                  'Nhà cung cấp',
+                  'Số hợp đồng',
+                  'Loại',
+                  'Số tiền',
+                  'Hiệu lực từ',
+                  'Đến',
+                  'Hành động',
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(policies as Record<string, unknown>[]).map((p) => (
-                <tr key={p.id as string} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">
-                    <EntityDialogLink entity="patient" id={(p.patient as Record<string, string>)?.id}>{(p.patient as Record<string, string>)?.name}</EntityDialogLink>
-                  </td>
-                  <td className="px-4 py-3">{p.provider as string}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{p.policyNo as string}</td>
-                  <td className="px-4 py-3 text-gray-600">{p.planName as string || '-'}</td>
-                  <td className="px-4 py-3 text-gray-500">{new Date(p.validFrom as string).toLocaleDateString('vi-VN')}</td>
-                  <td className="px-4 py-3 text-gray-500">{new Date(p.validTo as string).toLocaleDateString('vi-VN')}</td>
-                  <td className="px-4 py-3">
-                    <span className="px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">{p.coveragePercent as number}%</span>
+            <tbody className="divide-y divide-gray-200">
+              {policiesLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    Đang tải...
                   </td>
                 </tr>
-              ))}
-              {(policies as unknown[]).length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                  <ShieldCheck size={32} className="mx-auto mb-2 opacity-30" />Chua co hop dong bao hiem
-                </td></tr>
+              ) : policies.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-8 text-center text-gray-500">
+                    Chưa có hợp đồng bảo hiểm
+                  </td>
+                </tr>
+              ) : (
+                policies.map((p: any) => (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">{p.patient?.name || 'N/A'}</td>
+                    <td className="px-4 py-3">{p.provider}</td>
+                    <td className="px-4 py-3 font-mono text-xs">{p.policyNumber}</td>
+                    <td className="px-4 py-3">{p.type}</td>
+                    <td className="px-4 py-3">
+                      {p.coverageAmount?.toLocaleString() || 0} đ
+                    </td>
+                    <td className="px-4 py-3">
+                      {format(new Date(p.validFrom), 'dd/MM/yyyy')}
+                    </td>
+                    <td className="px-4 py-3">
+                      {format(new Date(p.validTo), 'dd/MM/yyyy')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleDeletePolicy(p.id)}
+                        className="text-red-600 hover:text-red-800 text-xs"
+                      >
+                        Xóa
+                      </button>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
@@ -106,96 +258,295 @@ export default function InsurancePage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Benh nhan', 'Nha cung cap', 'So hop dong', 'So tien yeu cau', 'Trang thai', 'Ngay tao', 'Hanh dong'].map(h => (
-                  <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
+                {[
+                  'Bệnh nhân',
+                  'Số tiền yêu cầu',
+                  'Chẩn đoán',
+                  'Trạng thái',
+                  'Ngày tạo',
+                  'Hành động',
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase"
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(claims as Record<string, unknown>[]).map((c) => (
-                <tr key={c.id as string} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 font-medium">
-                    <EntityDialogLink entity="patient" id={(c.bill as Record<string, Record<string, string>>)?.patient?.id}>{(c.bill as Record<string, Record<string, string>>)?.patient?.name}</EntityDialogLink>
-                  </td>
-                  <td className="px-4 py-3">{c.provider as string}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{c.policyNo as string}</td>
-                  <td className="px-4 py-3 font-medium">{(c.claimAmount as number).toLocaleString('vi-VN')}d</td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${CLAIM_STATUS_COLOR[c.status as string]}`}>
-                      {CLAIM_STATUS_LABEL[c.status as string]}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500">{new Date(c.createdAt as string).toLocaleDateString('vi-VN')}</td>
-                  <td className="px-4 py-3">
-                    {c.status === 'DRAFT' && (
-                      <button onClick={() => updateClaim.mutate({ id: c.id as string, status: 'SUBMITTED' })}
-                        className="text-xs text-blue-600 hover:underline">Nop yeu cau</button>
-                    )}
-                    {c.status === 'SUBMITTED' && (
-                      <div className="flex gap-2">
-                        <button onClick={() => updateClaim.mutate({ id: c.id as string, status: 'APPROVED' })}
-                          className="text-xs text-green-600 hover:underline">Duyet</button>
-                        <button onClick={() => updateClaim.mutate({ id: c.id as string, status: 'REJECTED' })}
-                          className="text-xs text-red-600 hover:underline">Tu choi</button>
-                      </div>
-                    )}
+            <tbody className="divide-y divide-gray-200">
+              {claimsLoading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    Đang tải...
                   </td>
                 </tr>
-              ))}
-              {(claims as unknown[]).length === 0 && (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">
-                  <FileText size={32} className="mx-auto mb-2 opacity-30" />Chua co yeu cau boi thuong
-                </td></tr>
+              ) : claims.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-gray-500">
+                    Chưa có yêu cầu bồi thường
+                  </td>
+                </tr>
+              ) : (
+                claims.map((c: any) => (
+                  <tr key={c.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3">{c.bill?.patient?.name || 'N/A'}</td>
+                    <td className="px-4 py-3 font-semibold">
+                      {c.claimAmount?.toLocaleString() || 0} đ
+                    </td>
+                    <td className="px-4 py-3">{c.diagnosis || 'N/A'}</td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`px-2 py-1 rounded text-xs ${
+                          CLAIM_STATUS_COLOR[c.status as ClaimStatus]
+                        }`}
+                      >
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {format(new Date(c.createdAt), 'dd/MM/yyyy')}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex gap-2">
+                        {c.status === 'DRAFT' && (
+                          <button
+                            onClick={() =>
+                              updateClaimStatusMut.mutate({
+                                id: c.id,
+                                status: 'SUBMITTED',
+                              })
+                            }
+                            className="text-blue-600 hover:text-blue-800 text-xs"
+                          >
+                            Gửi
+                          </button>
+                        )}
+                        {c.status === 'SUBMITTED' && (
+                          <>
+                            <button
+                              onClick={() =>
+                                updateClaimStatusMut.mutate({
+                                  id: c.id,
+                                  status: 'APPROVED',
+                                })
+                              }
+                              className="text-green-600 hover:text-green-800 text-xs"
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateClaimStatusMut.mutate({
+                                  id: c.id,
+                                  status: 'REJECTED',
+                                })
+                              }
+                              className="text-red-600 hover:text-red-800 text-xs"
+                            >
+                              Từ chối
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleDeleteClaim(c.id)}
+                          className="text-red-600 hover:text-red-800 text-xs"
+                        >
+                          Xóa
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
         </div>
       )}
 
-      <Modal open={openPolicy} onClose={() => setOpenPolicy(false)} title="Them hop dong bao hiem">
+      {/* Policy Modal */}
+      <Modal
+        open={showPolicyModal}
+        onClose={() => {
+          setShowPolicyModal(false);
+          setPolicyForm(INITIAL_POLICY_FORM);
+        }}
+        title="Thêm hợp đồng bảo hiểm"
+      >
         <div className="space-y-4">
           <div>
-            <label className="label">Benh nhan</label>
-            <select className="input" value={policyForm.patientId} onChange={e => setPolicyForm(f => ({ ...f, patientId: e.target.value }))}>
-              <option value="">-- Chon benh nhan --</option>
-              {(patients as Record<string, string>[]).map(p => <option key={p.id} value={p.id}>{p.name} - {p.phone}</option>)}
+            <label className="label">Mã bệnh nhân</label>
+            <input
+              type="text"
+              className="input"
+              value={policyForm.patientId}
+              onChange={(e) =>
+                setPolicyForm({ ...policyForm, patientId: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Nhà cung cấp</label>
+            <input
+              type="text"
+              className="input"
+              value={policyForm.provider}
+              onChange={(e) =>
+                setPolicyForm({ ...policyForm, provider: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Số hợp đồng</label>
+            <input
+              type="text"
+              className="input"
+              value={policyForm.policyNumber}
+              onChange={(e) =>
+                setPolicyForm({ ...policyForm, policyNumber: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Loại bảo hiểm</label>
+            <select
+              className="input"
+              value={policyForm.type}
+              onChange={(e) =>
+                setPolicyForm({ ...policyForm, type: e.target.value })
+              }
+            >
+              <option value="BHYT">BHYT</option>
+              <option value="BHTN">BHTN</option>
+              <option value="Khac">Khác</option>
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Nha cung cap BH</label>
-              <input className="input" placeholder="BHYT / Bao Viet..." value={policyForm.provider} onChange={e => setPolicyForm(f => ({ ...f, provider: e.target.value }))} />
-            </div>
-            <div>
-              <label className="label">So hop dong</label>
-              <input className="input" value={policyForm.policyNo} onChange={e => setPolicyForm(f => ({ ...f, policyNo: e.target.value }))} />
-            </div>
+          <div>
+            <label className="label">Số tiền bảo hiểm</label>
+            <input
+              type="number"
+              className="input"
+              value={policyForm.coverageAmount}
+              onChange={(e) =>
+                setPolicyForm({ ...policyForm, coverageAmount: e.target.value })
+              }
+            />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Goi bao hiem</label>
-              <input className="input" value={policyForm.planName} onChange={e => setPolicyForm(f => ({ ...f, planName: e.target.value }))} />
+              <label className="label">Hiệu lực từ</label>
+              <input
+                type="date"
+                className="input"
+                value={policyForm.validFrom}
+                onChange={(e) =>
+                  setPolicyForm({ ...policyForm, validFrom: e.target.value })
+                }
+              />
             </div>
             <div>
-              <label className="label">Muc bao hiem (%)</label>
-              <input type="number" min={0} max={100} className="input" value={policyForm.coveragePercent}
-                onChange={e => setPolicyForm(f => ({ ...f, coveragePercent: Number(e.target.value) }))} />
+              <label className="label">Đến</label>
+              <input
+                type="date"
+                className="input"
+                value={policyForm.validTo}
+                onChange={(e) =>
+                  setPolicyForm({ ...policyForm, validTo: e.target.value })
+                }
+              />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="label">Ngay hieu luc</label>
-              <input type="date" className="input" value={policyForm.validFrom} onChange={e => setPolicyForm(f => ({ ...f, validFrom: e.target.value }))} />
-            </div>
-            <div>
-              <label className="label">Ngay het han</label>
-              <input type="date" className="input" value={policyForm.validTo} onChange={e => setPolicyForm(f => ({ ...f, validTo: e.target.value }))} />
-            </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowPolicyModal(false);
+                setPolicyForm(INITIAL_POLICY_FORM);
+              }}
+              className="btn-secondary"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => createPolicyMut.mutate(policyForm)}
+              disabled={createPolicyMut.isLoading}
+              className="btn-primary"
+            >
+              {createPolicyMut.isLoading ? 'Đang xử lý...' : 'Thêm'}
+            </button>
           </div>
-          <div className="flex gap-3 justify-end pt-2">
-            <button className="btn-secondary" onClick={() => setOpenPolicy(false)}>Huy</button>
-            <button className="btn-primary" onClick={() => createPolicy.mutate(policyForm)} disabled={createPolicy.isLoading}>
-              {createPolicy.isLoading ? 'Dang luu...' : 'Luu'}
+        </div>
+      </Modal>
+
+      {/* Claim Modal */}
+      <Modal
+        open={showClaimModal}
+        onClose={() => {
+          setShowClaimModal(false);
+          setClaimForm(INITIAL_CLAIM_FORM);
+        }}
+        title="Tạo yêu cầu bồi thường"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="label">Mã hóa đơn</label>
+            <input
+              type="text"
+              className="input"
+              value={claimForm.billId}
+              onChange={(e) =>
+                setClaimForm({ ...claimForm, billId: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Số tiền yêu cầu</label>
+            <input
+              type="number"
+              className="input"
+              value={claimForm.claimAmount}
+              onChange={(e) =>
+                setClaimForm({ ...claimForm, claimAmount: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Chẩn đoán</label>
+            <input
+              type="text"
+              className="input"
+              value={claimForm.diagnosis}
+              onChange={(e) =>
+                setClaimForm({ ...claimForm, diagnosis: e.target.value })
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Ghi chú</label>
+            <textarea
+              className="input"
+              value={claimForm.note}
+              onChange={(e) =>
+                setClaimForm({ ...claimForm, note: e.target.value })
+              }
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => {
+                setShowClaimModal(false);
+                setClaimForm(INITIAL_CLAIM_FORM);
+              }}
+              className="btn-secondary"
+            >
+              Hủy
+            </button>
+            <button
+              onClick={() => createClaimMut.mutate(claimForm)}
+              disabled={createClaimMut.isLoading}
+              className="btn-primary"
+            >
+              {createClaimMut.isLoading ? 'Đang xử lý...' : 'Tạo'}
             </button>
           </div>
         </div>

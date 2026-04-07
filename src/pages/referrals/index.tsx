@@ -5,154 +5,217 @@ import Modal from '@/components/Modal';
 import api from '@/lib/axios';
 import { format } from 'date-fns';
 import { Plus, ArrowRightLeft } from 'lucide-react';
-import EntityDialogLink from '@/components/EntityDialogLink';
+import toast from 'react-hot-toast';
 
 const STATUS_COLOR: Record<string, string> = {
   PENDING: 'bg-yellow-100 text-yellow-700',
-  ACCEPTED: 'bg-blue-100 text-blue-700',
-  COMPLETED: 'bg-green-100 text-green-700',
-  DECLINED: 'bg-red-100 text-red-700',
-};
-
-const URGENCY_COLOR: Record<string, string> = {
-  ROUTINE: 'bg-gray-100 text-gray-600',
-  URGENT: 'bg-orange-100 text-orange-700',
-  EMERGENCY: 'bg-red-100 text-red-700',
+  ACCEPTED: 'bg-green-100 text-green-700',
+  REJECTED: 'bg-red-100 text-red-700',
+  COMPLETED: 'bg-blue-100 text-blue-700',
 };
 
 export default function ReferralsPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ patientId: '', fromDoctorId: '', toDepartment: '', toFacility: '', reason: '', urgency: 'ROUTINE', note: '' });
-
-  const { data, isLoading } = useQuery('referrals', () => api.get('/referrals').then(r => r.data.data));
-  const { data: patientsData } = useQuery('referrals-patients', () =>
-    api.get('/patients?limit=200').then(r => { const d = r.data.data; return Array.isArray(d) ? d : (d?.patients ?? []); }));
-  const { data: doctorsData } = useQuery('referrals-doctors', () =>
-    api.get('/doctors?limit=200').then(r => { const d = r.data.data; return Array.isArray(d) ? d : (d?.doctors ?? []); }));
-
-  const createMut = useMutation((d: typeof form) => api.post('/referrals', d), {
-    onSuccess: () => { qc.invalidateQueries('referrals'); setShowModal(false); },
+  const [editingId, setEditingId] = useState<string | null>(null);
+  
+  const [form, setForm] = useState({ 
+    patientId: '', toFacility: '', toDoctor: '', reason: '', 
+    diagnosis: '', urgency: 'ROUTINE', status: 'PENDING' 
   });
 
-  const updateStatus = useMutation(({ id, status }: { id: string; status: string }) =>
-    api.put(`/referrals/${id}`, { status }), {
-    onSuccess: () => qc.invalidateQueries('referrals'),
+  const { data, isLoading } = useQuery('referrals', () => 
+    api.get('/referrals').then(r => r.data.data));
+
+  const createMut = useMutation(
+    (d: typeof form) => {
+      // Validate
+      if (!d.patientId || !d.toFacility || !d.reason) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+      }
+      return api.post('/referrals', d);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('referrals'); 
+        setShowModal(false); 
+        setForm({ patientId: '', toFacility: '', toDoctor: '', reason: '', diagnosis: '', urgency: 'ROUTINE', status: 'PENDING' });
+        toast.success('Tạo chuyển viện thành công'); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
+
+  const updateMut = useMutation(
+    ({ id, data }: { id: string; data: typeof form }) => {
+      // Validate
+      if (!data.patientId || !data.toFacility || !data.reason) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+      }
+      return api.put(`/referrals/${id}`, data);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('referrals'); 
+        setShowModal(false); 
+        setEditingId(null); 
+        toast.success('Cập nhật thành công'); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
+
+  const deleteMut = useMutation((id: string) => api.delete(`/referrals/${id}`), {
+    onSuccess: () => { qc.invalidateQueries('referrals'); toast.success('Xóa chuyển viện thành công'); },
+    onError: () => { toast.error('Có lỗi xảy ra'); },
   });
+
+  const handleDelete = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa chuyển viện này?')) {
+      deleteMut.mutate(id);
+    }
+  };
 
   const referrals = data?.referrals || [];
-  const patients = Array.isArray(patientsData) ? patientsData : [];
-  const doctors = Array.isArray(doctorsData) ? doctorsData : [];
+
+  const handleEdit = (ref: any) => {
+    setEditingId(ref.id);
+    setForm({
+      patientId: ref.patientId,
+      toFacility: ref.toFacility,
+      toDoctor: ref.toDoctor || '',
+      reason: ref.reason,
+      diagnosis: ref.diagnosis || '',
+      urgency: ref.urgency,
+      status: ref.status,
+    });
+    setShowModal(true);
+  };
+
+  const handleSubmit = () => {
+    if (editingId) {
+      updateMut.mutate({ id: editingId, data: form });
+    } else {
+      createMut.mutate(form);
+    }
+  };
 
   return (
     <Layout>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
           <ArrowRightLeft className="text-primary" size={24} />
-          <h1 className="text-2xl font-bold text-gray-900">Chuyen vien / Chuyen khoa</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Quản lý chuyển viện</h1>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
-          <Plus size={16} /> Tao phieu chuyen
+        <button onClick={() => { setEditingId(null); setForm({ patientId: '', toFacility: '', toDoctor: '', reason: '', diagnosis: '', urgency: 'ROUTINE', status: 'PENDING' }); setShowModal(true); }} 
+          className="btn-primary flex items-center gap-2">
+          <Plus size={16} /> Tạo chuyển viện
         </button>
       </div>
 
       <div className="card overflow-hidden p-0">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>{['Benh nhan', 'Bac si chuyen', 'Ly do', 'Chuyen den', 'Muc do', 'Trang thai', 'Ngay tao', 'Hanh dong'].map(h => (
-              <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
-            ))}</tr>
+            <tr>
+              {['Bệnh nhân', 'Chuyển đến', 'Bác sĩ', 'Lý do', 'Mức độ', 'Trạng thái', 'Ngày tạo', 'Hành động'].map(h => (
+                <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
+              ))}
+            </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-200">
             {isLoading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Dang tai...</td></tr>
-            ) : referrals.map((r: Record<string, unknown>) => (
-              <tr key={r.id as string} className="hover:bg-gray-50">
-                <td className="px-4 py-3 font-medium">
-                  <EntityDialogLink entity="patient" id={(r.patient as Record<string, string>)?.id}>{(r.patient as Record<string, string>)?.name}</EntityDialogLink>
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  <EntityDialogLink entity="doctor" id={(r.fromDoctor as Record<string, string>)?.id}>{(r.fromDoctor as Record<string, Record<string, string>>)?.user?.name || '-'}</EntityDialogLink>
-                </td>
-                <td className="px-4 py-3 text-gray-600 max-w-[200px] truncate">{r.reason as string}</td>
-                <td className="px-4 py-3 text-gray-600">{(r.toDepartment as string) || (r.toFacility as string) || '-'}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${URGENCY_COLOR[r.urgency as string] || 'bg-gray-100 text-gray-600'}`}>{r.urgency as string}</span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_COLOR[r.status as string] || 'bg-gray-100 text-gray-600'}`}>{r.status as string}</span>
-                </td>
-                <td className="px-4 py-3 text-gray-500">{format(new Date(r.createdAt as string), 'dd/MM/yyyy')}</td>
-                <td className="px-4 py-3">
-                  {r.status === 'PENDING' && (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Đang tải...</td></tr>
+            ) : referrals.length === 0 ? (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">Chưa có chuyển viện</td></tr>
+            ) : (
+              referrals.map((r: any) => (
+                <tr key={r.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-3 font-medium">{r.patient?.name}</td>
+                  <td className="px-4 py-3">{r.toFacility}</td>
+                  <td className="px-4 py-3">{r.toDoctor || '-'}</td>
+                  <td className="px-4 py-3">{r.reason}</td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs ${r.urgency === 'URGENT' ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>
+                      {r.urgency}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`px-2 py-1 rounded text-xs ${STATUS_COLOR[r.status]}`}>{r.status}</span>
+                  </td>
+                  <td className="px-4 py-3">{format(new Date(r.createdAt), 'dd/MM/yyyy')}</td>
+                  <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => updateStatus.mutate({ id: r.id as string, status: 'ACCEPTED' })}
-                        className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100">Chap nhan</button>
-                      <button onClick={() => updateStatus.mutate({ id: r.id as string, status: 'DECLINED' })}
-                        className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100">Tu choi</button>
+                      <button onClick={() => handleEdit(r)} className="text-blue-600 hover:text-blue-800 text-xs">
+                        Sửa
+                      </button>
+                      <button onClick={() => handleDelete(r.id)} className="text-red-600 hover:text-red-800 text-xs">
+                        Xóa
+                      </button>
                     </div>
-                  )}
-                  {r.status === 'ACCEPTED' && (
-                    <button onClick={() => updateStatus.mutate({ id: r.id as string, status: 'COMPLETED' })}
-                      className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100">Hoan thanh</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!isLoading && !referrals.length && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400">Chua co phieu chuyen vien</td></tr>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </div>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Tao phieu chuyen vien">
+      <Modal open={showModal} onClose={() => { setShowModal(false); setEditingId(null); }} title={editingId ? 'Sửa chuyển viện' : 'Tạo chuyển viện'}>
         <div className="space-y-4">
           <div>
-            <label className="label">Benh nhan</label>
-            <select className="input" value={form.patientId} onChange={e => setForm(f => ({ ...f, patientId: e.target.value }))}>
-              <option value="">-- Chon benh nhan --</option>
-              {patients.map((p: Record<string, string>) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <label className="label">Mã bệnh nhân *</label>
+            <input type="text" className="input" value={form.patientId} 
+              onChange={(e) => setForm({ ...form, patientId: e.target.value })} placeholder="Nhập mã bệnh nhân" />
           </div>
           <div>
-            <label className="label">Bac si chuyen</label>
-            <select className="input" value={form.fromDoctorId} onChange={e => setForm(f => ({ ...f, fromDoctorId: e.target.value }))}>
-              <option value="">-- Chon bac si --</option>
-              {doctors.map((d: Record<string, unknown>) => <option key={d.id as string} value={d.id as string}>{(d.user as Record<string, string>)?.name}</option>)}
-            </select>
+            <label className="label">Chuyển đến cơ sở *</label>
+            <input type="text" className="input" value={form.toFacility} 
+              onChange={(e) => setForm({ ...form, toFacility: e.target.value })} placeholder="Tên bệnh viện/phòng khám" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Bác sĩ tiếp nhận</label>
+            <input type="text" className="input" value={form.toDoctor} 
+              onChange={(e) => setForm({ ...form, toDoctor: e.target.value })} placeholder="Tên bác sĩ (tùy chọn)" />
+          </div>
+          <div>
+            <label className="label">Lý do chuyển viện *</label>
+            <textarea className="input" value={form.reason} 
+              onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="Mô tả lý do chuyển viện" />
+          </div>
+          <div>
+            <label className="label">Chẩn đoán</label>
+            <textarea className="input" value={form.diagnosis} 
+              onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} placeholder="Chẩn đoán ban đầu" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">Chuyen den khoa</label>
-              <input className="input" placeholder="Khoa noi..." value={form.toDepartment} onChange={e => setForm(f => ({ ...f, toDepartment: e.target.value }))} />
+              <label className="label">Mức độ</label>
+              <select className="input" value={form.urgency} 
+                onChange={(e) => setForm({ ...form, urgency: e.target.value })}>
+                <option value="ROUTINE">Thường quy</option>
+                <option value="URGENT">Khẩn cấp</option>
+              </select>
             </div>
             <div>
-              <label className="label">Co so y te</label>
-              <input className="input" placeholder="Benh vien..." value={form.toFacility} onChange={e => setForm(f => ({ ...f, toFacility: e.target.value }))} />
+              <label className="label">Trạng thái</label>
+              <select className="input" value={form.status} 
+                onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                <option value="PENDING">Chờ xử lý</option>
+                <option value="ACCEPTED">Đã chấp nhận</option>
+                <option value="REJECTED">Từ chối</option>
+                <option value="COMPLETED">Hoàn thành</option>
+              </select>
             </div>
           </div>
-          <div>
-            <label className="label">Ly do chuyen</label>
-            <textarea className="input" rows={3} value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} />
-          </div>
-          <div>
-            <label className="label">Muc do khan cap</label>
-            <select className="input" value={form.urgency} onChange={e => setForm(f => ({ ...f, urgency: e.target.value }))}>
-              <option value="ROUTINE">Thuong</option>
-              <option value="URGENT">Khan</option>
-              <option value="EMERGENCY">Cap cuu</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Ghi chu</label>
-            <textarea className="input" rows={2} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
-          </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowModal(false)} className="btn-secondary">Huy</button>
-            <button onClick={() => createMut.mutate(form)} disabled={createMut.isLoading} className="btn-primary">
-              {createMut.isLoading ? 'Dang luu...' : 'Tao phieu'}
-            </button>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowModal(false); setEditingId(null); }} className="btn-secondary">Hủy</button>
+            <button onClick={handleSubmit} className="btn-primary">{editingId ? 'Cập nhật' : 'Tạo'}</button>
           </div>
         </div>
       </Modal>

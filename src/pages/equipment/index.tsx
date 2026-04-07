@@ -5,6 +5,7 @@ import Modal from '@/components/Modal';
 import api from '@/lib/axios';
 import { format } from 'date-fns';
 import { Plus, Wrench, AlertTriangle } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: 'bg-green-100 text-green-700',
@@ -16,21 +17,45 @@ export default function EquipmentPage() {
   const qc = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [maintModal, setMaintModal] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({ code: '', name: '', category: '', location: '', status: 'ACTIVE' });
   const [maintForm, setMaintForm] = useState({ type: 'PREVENTIVE', description: '', performedBy: '', cost: '' });
 
   const { data, isLoading } = useQuery('equipments', () => api.get('/equipment').then(r => r.data.data));
 
   const createMut = useMutation((d: typeof form) => api.post('/equipment', d), {
-    onSuccess: () => { qc.invalidateQueries('equipments'); setShowModal(false); },
+    onSuccess: () => { qc.invalidateQueries('equipments'); setShowModal(false); toast.success('Thêm thiết bị thành công'); },
+  });
+
+  const updateMut = useMutation(({ id, data }: { id: string; data: typeof form }) => 
+    api.put(`/equipment/${id}`, data), {
+    onSuccess: () => { qc.invalidateQueries('equipments'); setShowModal(false); setEditingId(null); toast.success('Cập nhật thành công'); },
+  });
+
+  const deleteMut = useMutation((id: string) => api.delete(`/equipment/${id}`), {
+    onSuccess: () => { qc.invalidateQueries('equipments'); toast.success('Xóa thiết bị thành công'); },
   });
 
   const maintMut = useMutation(({ id, data }: { id: string; data: typeof maintForm }) =>
     api.post(`/equipment/${id}/maintenance`, data), {
-    onSuccess: () => { qc.invalidateQueries('equipments'); setMaintModal(null); },
+    onSuccess: () => { qc.invalidateQueries('equipments'); setMaintModal(null); toast.success('Thêm bảo trì thành công'); },
   });
 
   const equipments = data?.equipments || [];
+
+  const handleEdit = (eq: any) => {
+    setEditingId(eq.id);
+    setForm({ code: eq.code, name: eq.name, category: eq.category || '', location: eq.location || '', status: eq.status });
+    setShowModal(true);
+  };
+
+  const handleSubmit = () => {
+    if (editingId) {
+      updateMut.mutate({ id: editingId, data: form });
+    } else {
+      createMut.mutate(form);
+    }
+  };
 
   return (
     <Layout>
@@ -39,7 +64,7 @@ export default function EquipmentPage() {
           <Wrench className="text-primary" size={24} />
           <h1 className="text-2xl font-bold text-gray-900">Quan ly thiet bi</h1>
         </div>
-        <button onClick={() => setShowModal(true)} className="btn-primary flex items-center gap-2">
+        <button onClick={() => { setEditingId(null); setForm({ code: '', name: '', category: '', location: '', status: 'ACTIVE' }); setShowModal(true); }} className="btn-primary flex items-center gap-2">
           <Plus size={16} /> Them thiet bi
         </button>
       </div>
@@ -76,10 +101,20 @@ export default function EquipmentPage() {
                     ) : '-'}
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => setMaintModal(e.id as string)}
-                      className="text-xs px-2 py-1 bg-yellow-50 text-yellow-700 rounded hover:bg-yellow-100 flex items-center gap-1">
-                      <Wrench size={11} /> Bao tri
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEdit(e)}
+                        className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100">
+                        Sửa
+                      </button>
+                      <button onClick={() => setMaintModal(e.id as string)}
+                        className="text-xs px-2 py-1 bg-yellow-50 text-yellow-700 rounded hover:bg-yellow-100 flex items-center gap-1">
+                        <Wrench size={11} /> Bảo trì
+                      </button>
+                      <button onClick={() => deleteMut.mutate(e.id as string)}
+                        className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100">
+                        Xóa
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -91,7 +126,7 @@ export default function EquipmentPage() {
         </table>
       </div>
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Them thiet bi moi">
+      <Modal open={showModal} onClose={() => { setShowModal(false); setEditingId(null); }} title={editingId ? 'Sửa thiết bị' : 'Thêm thiết bị mới'}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Ma thiet bi</label><input className="input" value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value }))} /></div>
@@ -110,9 +145,9 @@ export default function EquipmentPage() {
             </select>
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowModal(false)} className="btn-secondary">Huy</button>
-            <button onClick={() => createMut.mutate(form)} disabled={createMut.isLoading} className="btn-primary">
-              {createMut.isLoading ? 'Dang luu...' : 'Them'}
+            <button onClick={() => { setShowModal(false); setEditingId(null); }} className="btn-secondary">Huy</button>
+            <button onClick={handleSubmit} disabled={createMut.isLoading || updateMut.isLoading} className="btn-primary">
+              {(createMut.isLoading || updateMut.isLoading) ? 'Dang luu...' : (editingId ? 'Cập nhật' : 'Them')}
             </button>
           </div>
         </div>

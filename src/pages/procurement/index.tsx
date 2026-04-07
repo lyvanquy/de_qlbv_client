@@ -18,6 +18,7 @@ export default function ProcurementPage() {
   const [tab, setTab] = useState<'orders' | 'suppliers'>('orders');
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [editingSupId, setEditingSupId] = useState<string | null>(null);
   const [orderForm, setOrderForm] = useState({ supplierId: '', note: '', items: [{ itemName: '', quantity: 1, unitPrice: 0, total: 0 }] });
   const [supplierForm, setSupplierForm] = useState({ code: '', name: '', contactName: '', phone: '', email: '', address: '' });
 
@@ -32,6 +33,15 @@ export default function ProcurementPage() {
     onSuccess: () => { qc.invalidateQueries('suppliers'); setShowSupplierModal(false); },
   });
 
+  const updateSupplierMut = useMutation(({ id, data }: { id: string; data: typeof supplierForm }) => 
+    api.put(`/procurement/suppliers/${id}`, data), {
+    onSuccess: () => { qc.invalidateQueries('suppliers'); setShowSupplierModal(false); setEditingSupId(null); },
+  });
+
+  const deleteSupplierMut = useMutation((id: string) => api.delete(`/procurement/suppliers/${id}`), {
+    onSuccess: () => qc.invalidateQueries('suppliers'),
+  });
+
   const updateOrderStatus = useMutation(({ id, status }: { id: string; status: string }) =>
     api.put(`/procurement/orders/${id}`, { status, ...(status === 'RECEIVED' ? { receivedAt: new Date() } : {}) }), {
     onSuccess: () => qc.invalidateQueries('purchase-orders'),
@@ -39,6 +49,20 @@ export default function ProcurementPage() {
 
   const orders = ordersData?.orders || [];
   const suppliers = suppliersData?.suppliers || [];
+
+  const handleEditSupplier = (s: any) => {
+    setEditingSupId(s.id);
+    setSupplierForm({ code: s.code, name: s.name, contactName: s.contactName || '', phone: s.phone || '', email: s.email || '', address: s.address || '' });
+    setShowSupplierModal(true);
+  };
+
+  const handleSubmitSupplier = () => {
+    if (editingSupId) {
+      updateSupplierMut.mutate({ id: editingSupId, data: supplierForm });
+    } else {
+      createSupplierMut.mutate(supplierForm);
+    }
+  };
 
   const addItem = () => setOrderForm(f => ({ ...f, items: [...f.items, { itemName: '', quantity: 1, unitPrice: 0, total: 0 }] }));
   const updateItem = (i: number, field: string, val: string | number) => {
@@ -66,7 +90,7 @@ export default function ProcurementPage() {
             </button>
           )}
           {tab === 'suppliers' && (
-            <button onClick={() => setShowSupplierModal(true)} className="btn-primary flex items-center gap-2">
+            <button onClick={() => { setEditingSupId(null); setSupplierForm({ code: '', name: '', contactName: '', phone: '', email: '', address: '' }); setShowSupplierModal(true); }} className="btn-primary flex items-center gap-2">
               <Plus size={16} /> Them nha cung cap
             </button>
           )}
@@ -124,13 +148,13 @@ export default function ProcurementPage() {
         <div className="card overflow-hidden p-0">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>{['Ma', 'Ten nha cung cap', 'Nguoi lien he', 'Dien thoai', 'Email'].map(h => (
+              <tr>{['Ma', 'Ten nha cung cap', 'Nguoi lien he', 'Dien thoai', 'Email', 'Hanh dong'].map(h => (
                 <th key={h} className="px-4 py-3 text-left font-medium text-gray-600">{h}</th>
               ))}</tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {suppliersLoading ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Dang tai...</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Dang tai...</td></tr>
               ) : suppliers.map((s: Record<string, string>) => (
                 <tr key={s.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.code}</td>
@@ -138,10 +162,16 @@ export default function ProcurementPage() {
                   <td className="px-4 py-3 text-gray-600">{s.contactName || '-'}</td>
                   <td className="px-4 py-3 text-gray-600">{s.phone || '-'}</td>
                   <td className="px-4 py-3 text-gray-600">{s.email || '-'}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-2">
+                      <button onClick={() => handleEditSupplier(s)} className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100">Sua</button>
+                      <button onClick={() => deleteSupplierMut.mutate(s.id)} className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100">Xoa</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
               {!suppliersLoading && !suppliers.length && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">Chua co nha cung cap</td></tr>
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">Chua co nha cung cap</td></tr>
               )}
             </tbody>
           </table>
@@ -179,8 +209,8 @@ export default function ProcurementPage() {
         </div>
       </Modal>
 
-      {/* Create Supplier Modal */}
-      <Modal open={showSupplierModal} onClose={() => setShowSupplierModal(false)} title="Them nha cung cap">
+      {/* Create/Edit Supplier Modal */}
+      <Modal open={showSupplierModal} onClose={() => { setShowSupplierModal(false); setEditingSupId(null); }} title={editingSupId ? 'Sua nha cung cap' : 'Them nha cung cap'}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div><label className="label">Ma NCC</label><input className="input" value={supplierForm.code} onChange={e => setSupplierForm(f => ({ ...f, code: e.target.value }))} /></div>
@@ -193,9 +223,9 @@ export default function ProcurementPage() {
           <div><label className="label">Email</label><input className="input" value={supplierForm.email} onChange={e => setSupplierForm(f => ({ ...f, email: e.target.value }))} /></div>
           <div><label className="label">Dia chi</label><input className="input" value={supplierForm.address} onChange={e => setSupplierForm(f => ({ ...f, address: e.target.value }))} /></div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setShowSupplierModal(false)} className="btn-secondary">Huy</button>
-            <button onClick={() => createSupplierMut.mutate(supplierForm)} disabled={createSupplierMut.isLoading} className="btn-primary">
-              {createSupplierMut.isLoading ? 'Dang luu...' : 'Them'}
+            <button onClick={() => { setShowSupplierModal(false); setEditingSupId(null); }} className="btn-secondary">Huy</button>
+            <button onClick={handleSubmitSupplier} disabled={createSupplierMut.isLoading || updateSupplierMut.isLoading} className="btn-primary">
+              {(createSupplierMut.isLoading || updateSupplierMut.isLoading) ? 'Dang luu...' : (editingSupId ? 'Cap nhat' : 'Them')}
             </button>
           </div>
         </div>
