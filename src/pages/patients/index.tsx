@@ -35,16 +35,47 @@ export default function PatientsPage() {
   const { register, handleSubmit, reset, formState: { errors } } = useForm<PatientForm>();
 
   const createMutation = useMutation<any, any, PatientForm>(
-    (d: PatientForm) => api.post('/patients', d),
+    (d: PatientForm) => {
+      // Validate required fields
+      if (!d.name || !d.dob || !d.gender || !d.phone) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+      }
+
+      // Convert date to ISO string
+      const payload = {
+        ...d,
+        dob: new Date(d.dob).toISOString(),
+      };
+
+      console.log('[createPatient] Payload:', payload);
+      return api.post('/patients', payload);
+    },
     {
-      onSuccess: () => { qc.invalidateQueries('patients'); toast.success('Thêm bệnh nhân thành công'); setShowModal(false); reset(); },
-      onError: () => { toast.error('Thêm thất bại'); },
+      onSuccess: () => { 
+        qc.invalidateQueries('patients'); 
+        toast.success('Thêm bệnh nhân thành công'); 
+        setShowModal(false); 
+        reset(); 
+      },
+      onError: (error: any) => { 
+        console.error('[createPatient] Error:', error);
+        toast.error(error.message || 'Thêm thất bại'); 
+      },
     }
   );
 
   const deleteMutation = useMutation(
     (id: string) => api.delete(`/patients/${id}`),
-    { onSuccess: () => { qc.invalidateQueries('patients'); toast.success('Đã xóa'); } }
+    { 
+      onSuccess: () => { 
+        qc.invalidateQueries('patients'); 
+        toast.success('Đã xóa'); 
+      },
+      onError: (error: any) => {
+        console.error('[deletePatient] Error:', error);
+        toast.error('Xóa thất bại');
+      },
+    }
   );
 
   const columns = [
@@ -101,39 +132,64 @@ export default function PatientsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className="label">Họ tên *</label>
-              <input className="input" {...register('name', { required: true })} />
+              <input 
+                className="input" 
+                placeholder="Nhập họ tên đầy đủ"
+                {...register('name', { required: true })} 
+              />
               {errors.name && <p className="text-red-500 text-xs mt-1">Bắt buộc</p>}
             </div>
             <div>
               <label className="label">Ngày sinh *</label>
-              <input type="date" className="input" {...register('dob', { required: true })} />
+              <input 
+                type="date" 
+                className="input" 
+                {...register('dob', { required: true })} 
+              />
+              {errors.dob && <p className="text-red-500 text-xs mt-1">Bắt buộc</p>}
             </div>
             <div>
               <label className="label">Giới tính *</label>
               <select className="input" {...register('gender', { required: true })}>
+                <option value="">-- Chọn giới tính --</option>
                 <option value="MALE">Nam</option>
                 <option value="FEMALE">Nữ</option>
                 <option value="OTHER">Khác</option>
               </select>
+              {errors.gender && <p className="text-red-500 text-xs mt-1">Bắt buộc</p>}
             </div>
             <div>
               <label className="label">Điện thoại *</label>
-              <input className="input" {...register('phone', { required: true })} />
+              <input 
+                className="input" 
+                placeholder="Nhập số điện thoại"
+                {...register('phone', { required: true })} 
+              />
+              {errors.phone && <p className="text-red-500 text-xs mt-1">Bắt buộc</p>}
             </div>
             <div>
               <label className="label">Nhóm máu</label>
               <select className="input" {...register('bloodType')}>
-                <option value="">--</option>
+                <option value="">-- Chọn nhóm máu --</option>
                 {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(b => <option key={b} value={b}>{b}</option>)}
               </select>
             </div>
             <div className="col-span-2">
               <label className="label">Địa chỉ</label>
-              <input className="input" {...register('address')} />
+              <input 
+                className="input" 
+                placeholder="Nhập địa chỉ"
+                {...register('address')} 
+              />
             </div>
             <div className="col-span-2">
               <label className="label">Email</label>
-              <input type="email" className="input" {...register('email')} />
+              <input 
+                type="email" 
+                className="input" 
+                placeholder="Nhập email"
+                {...register('email')} 
+              />
             </div>
           </div>
           <div className="flex gap-3 justify-end pt-2">
