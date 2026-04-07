@@ -23,23 +23,73 @@ export default function EquipmentPage() {
 
   const { data, isLoading } = useQuery('equipments', () => api.get('/equipment').then(r => r.data.data));
 
-  const createMut = useMutation((d: typeof form) => api.post('/equipment', d), {
-    onSuccess: () => { qc.invalidateQueries('equipments'); setShowModal(false); toast.success('Thêm thiết bị thành công'); },
-  });
+  const createMut = useMutation(
+    (d: typeof form) => {
+      if (!d.code || !d.name) {
+        throw new Error('Vui lòng nhập mã và tên thiết bị');
+      }
+      return api.post('/equipment', d);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('equipments'); 
+        setShowModal(false); 
+        setForm({ code: '', name: '', category: '', location: '', status: 'ACTIVE' });
+        toast.success('Thêm thiết bị thành công'); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
-  const updateMut = useMutation(({ id, data }: { id: string; data: typeof form }) => 
-    api.put(`/equipment/${id}`, data), {
-    onSuccess: () => { qc.invalidateQueries('equipments'); setShowModal(false); setEditingId(null); toast.success('Cập nhật thành công'); },
-  });
+  const updateMut = useMutation(
+    ({ id, data }: { id: string; data: typeof form }) => {
+      if (!data.code || !data.name) {
+        throw new Error('Vui lòng nhập mã và tên thiết bị');
+      }
+      return api.put(`/equipment/${id}`, data);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('equipments'); 
+        setShowModal(false); 
+        setEditingId(null); 
+        toast.success('Cập nhật thành công'); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
   const deleteMut = useMutation((id: string) => api.delete(`/equipment/${id}`), {
     onSuccess: () => { qc.invalidateQueries('equipments'); toast.success('Xóa thiết bị thành công'); },
+    onError: () => { toast.error('Có lỗi xảy ra'); },
   });
 
-  const maintMut = useMutation(({ id, data }: { id: string; data: typeof maintForm }) =>
-    api.post(`/equipment/${id}/maintenance`, data), {
-    onSuccess: () => { qc.invalidateQueries('equipments'); setMaintModal(null); toast.success('Thêm bảo trì thành công'); },
-  });
+  const maintMut = useMutation(
+    ({ id, data }: { id: string; data: typeof maintForm }) => {
+      if (!data.description || !data.performedBy) {
+        throw new Error('Vui lòng nhập mô tả và người thực hiện');
+      }
+      return api.post(`/equipment/${id}/maintenance`, data);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('equipments'); 
+        setMaintModal(null); 
+        setMaintForm({ type: 'PREVENTIVE', description: '', performedBy: '', cost: '' });
+        toast.success('Thêm bảo trì thành công'); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
   const equipments = data?.equipments || [];
 

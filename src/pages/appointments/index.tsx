@@ -38,8 +38,24 @@ export default function AppointmentsPage() {
   const { register, handleSubmit, reset } = useForm<ApptForm>();
 
   const createMutation = useMutation(
-    (d: ApptForm) => api.post('/appointments', d),
-    { onSuccess: () => { qc.invalidateQueries('appointments'); toast.success('Đặt lịch thành công'); setShowModal(false); reset(); } }
+    (d: ApptForm) => {
+      if (!d.patientId || !d.doctorId || !d.appointmentDate) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+      }
+      return api.post('/appointments', d);
+    },
+    { 
+      onSuccess: () => { 
+        qc.invalidateQueries('appointments'); 
+        toast.success('Đặt lịch thành công'); 
+        setShowModal(false); 
+        reset(); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
   );
 
   const updateStatus = useMutation(

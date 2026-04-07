@@ -4,6 +4,7 @@ import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import api from '@/lib/axios';
 import { Plus, Scissors } from 'lucide-react';
+import toast from 'react-hot-toast';
 import EntityDialogLink from '@/components/EntityDialogLink';
 import StatusBadge from '@/components/StatusBadge';
 
@@ -34,8 +35,24 @@ export default function SurgeryPage() {
     api.get('/surgery/operating-rooms').then(r => { const d = r.data.data; return Array.isArray(d) ? d : (d?.operatingRooms ?? d ?? []); }));
 
   const create = useMutation(
-    (d: typeof form) => api.post('/surgery', d).then(r => r.data),
-    { onSuccess: () => { qc.invalidateQueries('surgeries'); setOpen(false); } }
+    (d: typeof form) => {
+      if (!d.patientId || !d.surgeonId || !d.orId || !d.procedureName || !d.scheduledStart || !d.scheduledEnd) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+      }
+      return api.post('/surgery', d).then(r => r.data);
+    },
+    { 
+      onSuccess: () => { 
+        qc.invalidateQueries('surgeries'); 
+        setOpen(false); 
+        setForm({ patientId: '', surgeonId: '', orId: '', procedureName: '', scheduledStart: '', scheduledEnd: '', anesthesiaType: '' });
+        toast.success('Lên lịch phẫu thuật thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
   );
 
   const NEXT_STATUS: Record<string, { label: string; next: string; cls: string }> = {

@@ -5,6 +5,7 @@ import Modal from '@/components/Modal';
 import api from '@/lib/axios';
 import { format } from 'date-fns';
 import { Plus, ShoppingCart, Building2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: 'bg-gray-100 text-gray-600',
@@ -25,18 +26,71 @@ export default function ProcurementPage() {
   const { data: ordersData, isLoading: ordersLoading } = useQuery('purchase-orders', () => api.get('/procurement/orders').then(r => r.data.data));
   const { data: suppliersData, isLoading: suppliersLoading } = useQuery('suppliers', () => api.get('/procurement/suppliers').then(r => r.data.data));
 
-  const createOrderMut = useMutation((d: typeof orderForm) => api.post('/procurement/orders', d), {
-    onSuccess: () => { qc.invalidateQueries('purchase-orders'); setShowOrderModal(false); },
-  });
+  const createOrderMut = useMutation(
+    (d: typeof orderForm) => {
+      if (!d.supplierId) {
+        throw new Error('Vui lòng chọn nhà cung cấp');
+      }
+      if (!d.items || d.items.length === 0 || !d.items[0].itemName) {
+        throw new Error('Vui lòng thêm ít nhất một hàng hóa');
+      }
+      return api.post('/procurement/orders', d);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('purchase-orders'); 
+        setShowOrderModal(false); 
+        setOrderForm({ supplierId: '', note: '', items: [{ itemName: '', quantity: 1, unitPrice: 0, total: 0 }] });
+        toast.success('Tạo đơn mua hàng thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
-  const createSupplierMut = useMutation((d: typeof supplierForm) => api.post('/procurement/suppliers', d), {
-    onSuccess: () => { qc.invalidateQueries('suppliers'); setShowSupplierModal(false); },
-  });
+  const createSupplierMut = useMutation(
+    (d: typeof supplierForm) => {
+      if (!d.code || !d.name) {
+        throw new Error('Vui lòng nhập mã và tên nhà cung cấp');
+      }
+      return api.post('/procurement/suppliers', d);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('suppliers'); 
+        setShowSupplierModal(false); 
+        setSupplierForm({ code: '', name: '', contactName: '', phone: '', email: '', address: '' });
+        toast.success('Thêm nhà cung cấp thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
-  const updateSupplierMut = useMutation(({ id, data }: { id: string; data: typeof supplierForm }) => 
-    api.put(`/procurement/suppliers/${id}`, data), {
-    onSuccess: () => { qc.invalidateQueries('suppliers'); setShowSupplierModal(false); setEditingSupId(null); },
-  });
+  const updateSupplierMut = useMutation(
+    ({ id, data }: { id: string; data: typeof supplierForm }) => {
+      if (!data.code || !data.name) {
+        throw new Error('Vui lòng nhập mã và tên nhà cung cấp');
+      }
+      return api.put(`/procurement/suppliers/${id}`, data);
+    },
+    {
+      onSuccess: () => { 
+        qc.invalidateQueries('suppliers'); 
+        setShowSupplierModal(false); 
+        setEditingSupId(null); 
+        toast.success('Cập nhật thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
+  );
 
   const deleteSupplierMut = useMutation((id: string) => api.delete(`/procurement/suppliers/${id}`), {
     onSuccess: () => qc.invalidateQueries('suppliers'),

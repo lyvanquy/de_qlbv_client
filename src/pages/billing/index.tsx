@@ -36,8 +36,28 @@ export default function BillingPage() {
     api.get('/patients', { params: { limit: 100 } }).then(r => { const d = r.data.data; return Array.isArray(d) ? d : (d?.patients ?? []); }));
 
   const createMutation = useMutation(
-    (d: BillForm) => api.post('/bills', d),
-    { onSuccess: () => { qc.invalidateQueries('bills'); toast.success('Tạo hóa đơn thành công'); setShowModal(false); reset(); } }
+    (d: BillForm) => {
+      if (!d.patientId || !d.items || d.items.length === 0) {
+        throw new Error('Vui lòng chọn bệnh nhân và thêm ít nhất một dịch vụ');
+      }
+      const hasEmptyItem = d.items.some(item => !item.serviceName || !item.price || !item.quantity);
+      if (hasEmptyItem) {
+        throw new Error('Vui lòng điền đầy đủ thông tin dịch vụ');
+      }
+      return api.post('/bills', d);
+    },
+    { 
+      onSuccess: () => { 
+        qc.invalidateQueries('bills'); 
+        toast.success('Tạo hóa đơn thành công'); 
+        setShowModal(false); 
+        reset(); 
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
   );
 
   const payMutation = useMutation(

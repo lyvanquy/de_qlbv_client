@@ -4,6 +4,7 @@ import Layout from '@/components/Layout';
 import Modal from '@/components/Modal';
 import api from '@/lib/axios';
 import { Plus, Stethoscope, ArrowRight } from 'lucide-react';
+import toast from 'react-hot-toast';
 import EntityDialogLink from '@/components/EntityDialogLink';
 import StatusBadge from '@/components/StatusBadge';
 
@@ -37,8 +38,24 @@ export default function EncountersPage() {
     }));
 
   const create = useMutation(
-    (d: typeof form) => api.post('/encounters', d).then(r => r.data),
-    { onSuccess: () => { qc.invalidateQueries('encounters'); setOpen(false); setForm({ patientId: '', type: 'OUTPATIENT', chiefComplaint: '' }); } }
+    (d: typeof form) => {
+      if (!d.patientId || !d.chiefComplaint) {
+        throw new Error('Vui lòng nhập đầy đủ thông tin bắt buộc');
+      }
+      return api.post('/encounters', d).then(r => r.data);
+    },
+    { 
+      onSuccess: () => { 
+        qc.invalidateQueries('encounters'); 
+        setOpen(false); 
+        setForm({ patientId: '', type: 'OUTPATIENT', chiefComplaint: '' }); 
+        toast.success('Tạo đợt điều trị thành công');
+      },
+      onError: (error: any) => {
+        console.error('Error:', error);
+        toast.error(error.message || 'Có lỗi xảy ra');
+      },
+    }
   );
 
   const updateStatus = useMutation(
